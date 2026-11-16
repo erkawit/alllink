@@ -63,8 +63,8 @@ function db(): PDO
     $dsn = 'pgsql:host=' . $host . ';port=' . ($p['port'] ?? 5432)
          . ';dbname=' . ltrim($p['path'] ?? '/neondb', '/')
          . ';sslmode=' . ($q['sslmode'] ?? 'require');
-    // libpq รุ่นเก่าบางเครื่องไม่ส่ง SNI — ระบุ endpoint ของ Neon ไว้ให้เสมอ
-    if (preg_match('~^(ep-[a-z0-9-]+?)(-pooler)?\.~', $host, $m) && str_contains($host, 'neon.tech')) {
+    // libpq รุ่นเก่าบางเครื่องไม่ส่ง SNI — ระบุ endpoint ของ Neon ให้ตรงกับ host เสมอ (รวม -pooler ถ้ามี)
+    if (str_contains($host, 'neon.tech') && preg_match('~^(ep-[a-z0-9-]+)\.~', $host, $m)) {
         $dsn .= ";options='endpoint=" . $m[1] . "'";
     }
 
