@@ -1,0 +1,18 @@
+# ค่าลับ / connection string
+.env
+.env.*
+!.env.example
+
+# ไฟล์สำรองฐานข้อมูลเดิม (มีรหัสผ่านระบบต่างๆ แบบข้อความธรรมดา — ห้ามขึ้น git)
+database/alllink-*.sql
+database/*.sql
+!database/neon/*.sql
+!database/mysql-legacy/*.sql
+
+# ไฟล์จากระบบเดิม / ระบบปฏิบัติการ
+uploads/
+files/
+.DS_Store
+.vercel
+node_modules/
+_xampp-old/
