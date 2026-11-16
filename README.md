@@ -22,7 +22,7 @@
   - ไม่ล็อกอิน: เก็บใน `localStorage` ของเบราว์เซอร์
   - ล็อกอิน: รวมรายการโปรดในเครื่องเข้าบัญชีอัตโนมัติ แล้วบันทึกทั้งในบัญชีและในเครื่อง
 - **ผู้ดูแลระบบ** เพิ่ม/แก้ไข/ลบรายการ, เปิด-ปิดการแสดงผลรายการหรือไฟล์แนบ, จัดการบัญชีผู้ใช้
-- ความปลอดภัย: CSRF token ทุกคำขอ API, รหัสผ่านเข้ารหัสด้วย `password_hash` (bcrypt), session เก็บในฐานข้อมูล, ไฟล์แนบเปิดผ่าน `file.php` ที่ตรวจสิทธิ์ก่อนเสมอ
+- ความปลอดภัย: CSRF token ทุกคำขอ API, รหัสผ่านเข้ารหัสด้วย `password_hash` (bcrypt), session เป็นคุกกี้ลงลายเซ็น, ไฟล์แนบเปิดผ่าน `file.php` ที่ตรวจสิทธิ์ก่อนเสมอ
 
 ### สิทธิ์การใช้งาน
 
@@ -44,14 +44,13 @@
                                          ▼
                                  Neon PostgreSQL
                                  ├─ users, links, favorites
-                                 ├─ link_files  (เนื้อไฟล์แนบ BYTEA)
-                                 └─ sessions    (PHP session)
+                                 └─ link_files  (เนื้อไฟล์แนบ BYTEA)
 ```
 
 เหตุผลของการออกแบบสำหรับ Vercel:
 
 - **Serverless ไม่มีดิสก์ถาวร** → ไฟล์แนบที่อัปโหลดใหม่เก็บในตาราง `link_files` (BYTEA) แทนโฟลเดอร์ `uploads/`
-- **แต่ละคำขออาจรันคนละเครื่อง** → PHP session เก็บในตาราง `sessions` (คลาส `DbSessionHandler`)
+- **แต่ละคำขออาจรันคนละเครื่อง** → session เก็บเป็นคุกกี้ที่ลงลายเซ็น HMAC-SHA256 (`UDPTSESS`, หมดอายุ 8 ชั่วโมง) แทน session ไฟล์ของ PHP
 - **Vercel จำกัดขนาด request ~4.5 MB** → ขนาดไฟล์แนบสูงสุดตั้งไว้ 4 MB (ปรับด้วย env `MAX_UPLOAD_MB`)
 - ไฟล์คู่มือ PDF เดิมจากระบบ XAMPP อยู่ใน `api/_files/` (อ่านอย่างเดียว) — `file.php` จะหาไฟล์ในฐานข้อมูลก่อน ถ้าไม่พบจึงอ่านจากโฟลเดอร์นี้
 - URL เดิม (`index.php`, `users.php`, `api.php`, `file.php`) ยังใช้ได้เหมือนเดิม — `vercel.json` route ไปยังไฟล์ใน `api/`
@@ -70,7 +69,7 @@ alllink/
 │   ├── install.php             สร้างตาราง + ข้อมูลเริ่มต้นบน Neon
 │   ├── php.ini                 ค่า PHP บน Vercel (ขนาดอัปโหลด, timezone)
 │   ├── _lib/
-│   │   ├── config.php          ตั้งค่าระบบ, เชื่อมต่อ Neon, DB session
+│   │   ├── config.php          ตั้งค่าระบบ, เชื่อมต่อ Neon, session คุกกี้
 │   │   ├── header.php          ส่วนหัวหน้าเว็บ
 │   │   └── footer.php          ส่วนท้ายหน้าเว็บ
 │   └── _files/                 ไฟล์คู่มือ PDF เดิม (อ่านอย่างเดียว)
@@ -94,7 +93,6 @@ alllink/
 | `links` | รายการลิงก์/ระบบ/เอกสาร, สถานะแสดงผล, ข้อมูลไฟล์แนบ (ชื่อ, ชนิด, ขนาด) |
 | `link_files` | เนื้อไฟล์แนบ (BYTEA) 1 ไฟล์ต่อ 1 รายการ — ลบตามอัตโนมัติเมื่อลบรายการ |
 | `favorites` | รายการโปรดของผู้ใช้แต่ละคน |
-| `sessions` | PHP session (หมดอายุ 8 ชั่วโมง) |
 
 ---
 
@@ -102,7 +100,7 @@ alllink/
 
 | ไฟล์เดิม | ใช้ทำอะไร | ผลลัพธ์ในระบบใหม่ |
 |---|---|---|
-| `database.sql` | โครงสร้าง MySQL ของ UDTC-Portal รุ่นใหม่ (users, links, favorites) | แปลงเป็น PostgreSQL → `database/neon/schema.sql` (+ ตาราง `link_files`, `sessions`) |
+| `database.sql` | โครงสร้าง MySQL ของ UDTC-Portal รุ่นใหม่ (users, links, favorites) | แปลงเป็น PostgreSQL → `database/neon/schema.sql` (+ ตาราง `link_files`) |
 | `import_links.sql` | ลิงก์ 99 รายการที่แปลงจากระบบเดิมแล้ว (ตัดลิงก์ซ้ำ 12 รายการ) | `database/neon/seed.sql` พร้อมขนาดไฟล์คู่มือ PDF จริง |
 | `alllink-16-11-2569.sql` | ฐานข้อมูลระบบเดิมทั้งหมด (app_list, group_name, all_user ฯลฯ) | ใช้เป็นต้นทางของลิงก์ — **ไม่นำขึ้น git** เพราะตาราง `all_user` มีชื่อผู้ใช้/รหัสผ่านของระบบต่างๆ แบบข้อความธรรมดา |
 
@@ -166,6 +164,7 @@ php -S localhost:8000 router.php
 | ชื่อ | จำเป็น | คำอธิบาย |
 |---|---|---|
 | `DATABASE_URL` | ✅ | connection string ของ Neon (รองรับ `POSTGRES_URL` ที่ Vercel ตั้งให้ด้วย) |
+| `APP_SECRET` | แนะนำ | คีย์ลับสำหรับลงลายเซ็นคุกกี้ session (สุ่มยาว 32+ ตัวอักษร) ถ้าไม่ตั้งจะสร้างจาก `DATABASE_URL` |
 | `MAX_UPLOAD_MB` | — | ขนาดไฟล์แนบสูงสุด (MB) ค่าเริ่มต้น `4` — บน Vercel ไม่ควรเกิน 4 |
 
 ---

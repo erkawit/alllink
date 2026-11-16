@@ -127,11 +127,11 @@ try {
             if (!$u || !password_verify($password, $u['password_hash'])) fail('ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง');
             if (!$u['is_active']) fail('บัญชีนี้ถูกระงับการใช้งาน กรุณาติดต่อผู้ดูแลระบบ');
 
-            session_regenerate_id(true);
             $_SESSION['user'] = [
                 'id' => (int)$u['id'], 'username' => $u['username'],
                 'fullname' => $u['fullname'], 'role' => $u['role'],
             ];
+            session_save();
             db()->prepare('UPDATE users SET last_login=NOW() WHERE id=?')->execute([$u['id']]);
 
             // รวม favorite ที่เก็บไว้ในเครื่องเข้ากับบัญชี
@@ -145,7 +145,7 @@ try {
 
         case 'logout': {
             $_SESSION = [];
-            session_destroy();
+            session_save();
             out(['message' => 'ออกจากระบบแล้ว']);
         }
 
@@ -381,7 +381,7 @@ try {
                 if ($password !== '') $p[] = password_hash($password, PASSWORD_DEFAULT);
                 $p[] = $id;
                 db()->prepare($sql)->execute($p);
-                if ($id === $me['id']) { $_SESSION['user']['username'] = $username; $_SESSION['user']['fullname'] = $fullname; }
+                if ($id === $me['id']) { $_SESSION['user']['username'] = $username; $_SESSION['user']['fullname'] = $fullname; session_save(); }
                 out(['message' => 'บันทึกข้อมูลผู้ใช้เรียบร้อย']);
             }
             db()->prepare('INSERT INTO users (username, password_hash, fullname, role, is_active) VALUES (?,?,?,?,?)')
@@ -402,6 +402,7 @@ try {
     }
 } catch (PDOException $e) {
     error_log('[UDTC-Portal] ' . $e->getMessage());
+    if ($e->getCode() === '42P01') fail('ยังไม่ได้ติดตั้งฐานข้อมูล กรุณาเปิดหน้า /install.php ก่อน', 500);
     fail('เกิดข้อผิดพลาดกับฐานข้อมูล กรุณาลองใหม่อีกครั้ง', 500);
 } catch (RuntimeException $e) {
     fail($e->getMessage(), 500);

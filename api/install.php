@@ -5,7 +5,6 @@
  * - เพิ่มข้อมูลเริ่มต้น (database/neon/seed.sql) เฉพาะเมื่อยังไม่มีผู้ใช้/ลิงก์
  * เพื่อความปลอดภัย: เมื่อติดตั้งแล้ว (มีผู้ใช้ในระบบ) หน้านี้จะใช้ได้เฉพาะผู้ดูแลระบบที่ล็อกอินอยู่
  */
-define('UDPT_NO_SESSION', true);
 require_once __DIR__ . '/_lib/config.php';
 
 $steps = [];
@@ -28,18 +27,15 @@ try {
         && (int)$pdo->query('SELECT COUNT(*) FROM users')->fetchColumn() > 0;
 
     if ($installed) {
-        // ติดตั้งแล้ว — อนุญาตเฉพาะผู้ดูแลระบบ (ใช้ session ปกติ)
-        session_set_save_handler(new DbSessionHandler(), true);
-        session_name('UDPTSESSID');
-        session_start();
-        if ((($_SESSION['user']['role'] ?? '') !== 'admin')) {
+        // ติดตั้งแล้ว — อนุญาตเฉพาะผู้ดูแลระบบที่ล็อกอินอยู่
+        if (!is_admin()) {
             $locked = true;
         }
     }
 
     if (!$locked) {
         $pdo->exec(sql_file('schema.sql'));
-        $steps[] = 'สร้าง/ตรวจสอบตาราง users, links, link_files, favorites, sessions';
+        $steps[] = 'สร้าง/ตรวจสอบตาราง users, links, link_files, favorites';
 
         $before = (int)$pdo->query('SELECT COUNT(*) FROM links')->fetchColumn();
         $pdo->exec(sql_file('seed.sql'));

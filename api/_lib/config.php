@@ -77,66 +77,57 @@ function db(): PDO
     return $pdo;
 }
 
-/**
- * เก็บ session ในฐานข้อมูล — serverless (Vercel) ไม่มีดิสก์ที่ใช้ร่วมกันระหว่างคำขอ
- */
-class DbSessionHandler implements SessionHandlerInterface
-{
-    public function open($path, $name): bool { return true; }
-    public function close(): bool { return true; }
-
-    public function read($id): string|false
-    {
-        try {
-            $st = db()->prepare('SELECT data FROM sessions WHERE id=? AND expires_at > NOW()');
-            $st->execute([$id]);
-            return (string)($st->fetchColumn() ?: '');
-        } catch (Throwable $e) {
-            return '';
-        }
-    }
-
-    public function write($id, $data): bool
-    {
-        try {
-            db()->prepare("INSERT INTO sessions (id, data, expires_at) VALUES (?, ?, NOW() + make_interval(secs => ?))
-                           ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data, expires_at = EXCLUDED.expires_at")
-                ->execute([$id, $data, SESSION_LIFETIME]);
-        } catch (Throwable $e) {
-            // ไม่ให้หน้าเว็บล่มหากเขียน session ไม่ได้
-        }
-        return true;
-    }
-
-    public function destroy($id): bool
-    {
-        try { db()->prepare('DELETE FROM sessions WHERE id=?')->execute([$id]); } catch (Throwable $e) {}
-        return true;
-    }
-
-    public function gc($max): int|false
-    {
-        try { return db()->exec('DELETE FROM sessions WHERE expires_at < NOW()'); } catch (Throwable $e) { return 0; }
-    }
-}
-
 function is_https(): bool
 {
     return (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
         || strtolower($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https';
 }
 
-if (!defined('UDPT_NO_SESSION') && session_status() === PHP_SESSION_NONE) {
-    ini_set('session.gc_probability', '1');
-    ini_set('session.gc_divisor', '100');
-    ini_set('session.gc_maxlifetime', (string)SESSION_LIFETIME);
-    session_set_save_handler(new DbSessionHandler(), true);
-    session_name('UDPTSESSID');
-    session_set_cookie_params([
-        'lifetime' => 0, 'path' => '/', 'httponly' => true, 'samesite' => 'Lax', 'secure' => is_https(),
-    ]);
-    session_start();
+/**
+ * Session แบบคุกกี้ที่ลงลายเซ็น (HMAC-SHA256)
+ * Vercel เป็น serverless — แต่ละคำขออาจรันคนละเครื่อง จึงไม่ใช้ session ไฟล์ของ PHP
+ * ข้อมูลในคุกกี้มีแค่ข้อมูลผู้ใช้ที่ล็อกอิน + CSRF token และแก้ไขไม่ได้เพราะมีลายเซ็น
+ */
+const SESSION_COOKIE = 'UDPTSESS';
+
+function app_secret(): string
+{
+    $s = getenv('APP_SECRET');
+    if ($s) return $s;
+    try {
+        return hash('sha256', 'udtc-portal|' . database_url());
+    } catch (Throwable $e) {
+        return hash('sha256', 'udtc-portal|no-database');
+    }
 }
+
+function b64url(string $s): string { return rtrim(strtr(base64_encode($s), '+/', '-_'), '='); }
+function b64url_dec(string $s): string { return (string)base64_decode(strtr($s, '-_', '+/')); }
+
+function session_load(): array
+{
+    $raw = $_COOKIE[SESSION_COOKIE] ?? '';
+    if (!preg_match('~^([A-Za-z0-9_-]+)\.([A-Za-z0-9_-]+)$~', $raw, $m)) return [];
+    if (!hash_equals(b64url(hash_hmac('sha256', $m[1], app_secret(), true)), $m[2])) return [];
+    $data = json_decode(b64url_dec($m[1]), true);
+    if (!is_array($data) || ($data['_exp'] ?? 0) < time()) return [];
+    unset($data['_exp']);
+    return $data;
+}
+
+/** บันทึก $_SESSION ลงคุกกี้ (ต้องเรียกก่อนส่งเนื้อหาออกไป) */
+function session_save(): void
+{
+    $opt = ['path' => '/', 'httponly' => true, 'samesite' => 'Lax', 'secure' => is_https()];
+    if (empty($_SESSION)) {
+        setcookie(SESSION_COOKIE, '', ['expires' => time() - 3600] + $opt);
+        return;
+    }
+    $payload = b64url(json_encode($_SESSION + ['_exp' => time() + SESSION_LIFETIME], JSON_UNESCAPED_UNICODE));
+    setcookie(SESSION_COOKIE, $payload . '.' . b64url(hash_hmac('sha256', $payload, app_secret(), true)), $opt);
+}
+
+$_SESSION = session_load();
 
 function current_user(): ?array
 {
@@ -152,6 +143,7 @@ function csrf_token(): string
 {
     if (empty($_SESSION['csrf'])) {
         $_SESSION['csrf'] = bin2hex(random_bytes(16));
+        session_save();
     }
     return $_SESSION['csrf'];
 }

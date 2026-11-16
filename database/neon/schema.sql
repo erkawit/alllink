@@ -50,14 +50,6 @@ CREATE TABLE IF NOT EXISTS favorites (
     PRIMARY KEY (user_id, link_id)
 );
 
--- session ของ PHP (Vercel เป็น serverless จึงเก็บ session ในฐานข้อมูล)
-CREATE TABLE IF NOT EXISTS sessions (
-    id         VARCHAR(128) PRIMARY KEY,
-    data       TEXT         NOT NULL DEFAULT '',
-    expires_at TIMESTAMP    NOT NULL
-);
-CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions (expires_at);
-
 -- updated_at อัตโนมัติ (แทน ON UPDATE CURRENT_TIMESTAMP ของ MySQL)
 CREATE OR REPLACE FUNCTION udpt_touch_updated_at() RETURNS TRIGGER AS $$
 BEGIN

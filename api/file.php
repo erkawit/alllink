@@ -14,8 +14,6 @@ if (!$row || !$row['file_stored'] || (!is_admin() && (!$row['is_visible'] || !$r
     http_response_code(404);
     exit('ไม่พบไฟล์');
 }
-session_write_close();
-
 $content = link_file_content($id, $row['file_stored']);
 if ($content === null) {
     http_response_code(404);
